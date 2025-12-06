@@ -3,8 +3,13 @@ import { useState, useEffect } from 'react';
 import { FinanceData, Voucher, Account, AuditLog, AppSettings, FixedAsset, AccountType, BalanceItem, AuditChange } from '../types';
 import { DEFAULT_ACCOUNTS, SEED_VOUCHERS, SEED_ASSETS, CURRENT_USER } from './mockData';
 import { translations } from './translations';
+import { apiClient } from './api';
 
-const STORAGE_KEY = 'finance_manager_enterprise_v3'; // Upgraded version for clean slate
+// --- CONFIGURATION ---
+// Set this to true to enable backend server integration.
+const USE_BACKEND = false; 
+
+const STORAGE_KEY = 'finance_manager_enterprise_v3';
 
 const INITIAL_DATA: FinanceData = {
   accounts: DEFAULT_ACCOUNTS,
@@ -16,7 +21,7 @@ const INITIAL_DATA: FinanceData = {
     currency: '¥',
     lockDate: '',
     theme: 'light',
-    language: 'zh', // Default language
+    language: 'zh',
     incomeCategories: ['学费收入', '咨询服务', '政府补助', '利息收入'],
     expenseCategories: ['房租物业', '水电费', '工资薪金', '市场推广', '办公用品', '差旅费']
   },
@@ -28,14 +33,8 @@ export const getStorageData = (): FinanceData => {
   try {
     const item = localStorage.getItem(STORAGE_KEY);
     if (!item) return INITIAL_DATA;
-    
-    // Merge with INITIAL_DATA to ensure new fields
     const parsed = JSON.parse(item);
-    return {
-        ...INITIAL_DATA,
-        ...parsed,
-        settings: { ...INITIAL_DATA.settings, ...parsed.settings }
-    };
+    return { ...INITIAL_DATA, ...parsed, settings: { ...INITIAL_DATA.settings, ...parsed.settings } };
   } catch (error) {
     return INITIAL_DATA;
   }
@@ -50,9 +49,15 @@ export const useFinanceData = () => {
   const [data, setData] = useState<FinanceData>(getStorageData());
 
   useEffect(() => {
-    const handleStorageChange = () => setData(getStorageData());
-    window.addEventListener('finance-data-update', handleStorageChange);
-    return () => window.removeEventListener('finance-data-update', handleStorageChange);
+    if (USE_BACKEND) {
+       apiClient.getBootstrapData()
+         .then(serverData => setData(serverData))
+         .catch(err => console.warn("Failed to connect to backend, falling back to local.", err));
+    } else {
+       const handleStorageChange = () => setData(getStorageData());
+       window.addEventListener('finance-data-update', handleStorageChange);
+       return () => window.removeEventListener('finance-data-update', handleStorageChange);
+    }
   }, []);
 
   useEffect(() => {
@@ -63,30 +68,18 @@ export const useFinanceData = () => {
     }
   }, [data.settings.theme]);
 
-  // Translation Helper
   const t = (key: string): string => {
     const lang = data.settings.language || 'zh';
     const keys = key.split('.');
     let value: any = translations[lang];
-    
     for (const k of keys) {
-      if (value && value[k]) {
-        value = value[k];
-      } else {
-        return key; // Return key if translation missing
-      }
+      if (value && value[k]) value = value[k];
+      else return key;
     }
     return value;
   };
 
-  const logAction = (
-    currentData: FinanceData, 
-    action: AuditLog['action'], 
-    entity: AuditLog['entity'], 
-    details: string,
-    changes?: AuditChange[],
-    entityId?: string
-  ) => {
+  const logAction = (currentData: FinanceData, action: AuditLog['action'], entity: AuditLog['entity'], details: string, changes?: AuditChange[], entityId?: string) => {
     const newLog: AuditLog = {
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
@@ -102,103 +95,96 @@ export const useFinanceData = () => {
     return currentData;
   };
 
-  // --- Core Accountant Functions ---
+  const addVoucher = async (voucher: Omit<Voucher, 'id' | 'voucherNumber'>) => {
+    if (USE_BACKEND) {
+        await apiClient.createVoucher(voucher);
+        const newData = await apiClient.getBootstrapData();
+        setData(newData);
+        return;
+    }
 
-  const addVoucher = (voucher: Omit<Voucher, 'id' | 'voucherNumber'>) => {
     let newData = { ...data };
-    
-    // Check Lock Date
     if (newData.settings.lockDate && voucher.date <= newData.settings.lockDate) {
       alert(`无法在锁定日期 (${newData.settings.lockDate}) 之前添加凭证。`);
       return;
     }
-
-    // Verify Balance
-    const totalDebit = voucher.entries.reduce((sum, e) => sum + e.debit, 0);
-    const totalCredit = voucher.entries.reduce((sum, e) => sum + e.credit, 0);
-    if (Math.abs(totalDebit - totalCredit) > 0.01) {
-      alert(`凭证借贷不平！借: ${totalDebit}, 贷: ${totalCredit}`);
-      return;
-    }
-
     const newId = crypto.randomUUID();
     const dateStr = voucher.date.replace(/-/g, '');
     const count = newData.vouchers.filter(v => v.date === voucher.date).length + 1;
     const voucherNumber = `V-${dateStr}-${count.toString().padStart(3, '0')}`;
-
     const newVoucher: Voucher = { ...voucher, id: newId, voucherNumber, createdBy: CURRENT_USER.name };
     newData.vouchers = [newVoucher, ...newData.vouchers];
-    
-    const changes: AuditChange[] = [
-      { field: 'voucherNumber', oldValue: null, newValue: voucherNumber },
-      { field: 'amount', oldValue: null, newValue: totalDebit }
-    ];
-
-    newData = logAction(newData, 'create', 'voucher', `创建凭证 ${voucherNumber}: ${voucher.description}`, changes, newId);
+    newData = logAction(newData, 'create', 'voucher', `创建凭证 ${voucherNumber}: ${voucher.description}`, [], newId);
     setStorageData(newData);
   };
 
-  const updateVoucherStatus = (id: string, status: Voucher['status']) => {
+  const updateVoucherStatus = async (id: string, status: Voucher['status']) => {
+    if (USE_BACKEND) {
+        await apiClient.updateVoucherStatus(id, status);
+        const newData = await apiClient.getBootstrapData();
+        setData(newData);
+        return;
+    }
+
     let newData = { ...data };
     const voucher = newData.vouchers.find(v => v.id === id);
-    
     if (voucher) {
-      const oldStatus = voucher.status;
       newData.vouchers = newData.vouchers.map(v => v.id === id ? { ...v, status } : v);
-      
-      const changes: AuditChange[] = [
-        { field: 'status', oldValue: oldStatus, newValue: status }
-      ];
-      
-      newData = logAction(newData, 'approve', 'voucher', `更新凭证 ${voucher.voucherNumber} 状态为 ${status}`, changes, id);
+      newData = logAction(newData, 'approve', 'voucher', `更新凭证 ${voucher.voucherNumber} 状态为 ${status}`, [], id);
       setStorageData(newData);
     }
   };
 
-  const addAccount = (account: Omit<Account, 'id'>) => {
+  const addAccount = async (account: Omit<Account, 'id'>) => {
+    if(USE_BACKEND) {
+        await apiClient.createAccount(account);
+        setData(await apiClient.getBootstrapData());
+        return;
+    }
     let newData = { ...data };
     const newId = crypto.randomUUID();
     newData.accounts.push({ ...account, id: newId });
-    
-    const changes: AuditChange[] = [
-       { field: 'code', oldValue: null, newValue: account.code },
-       { field: 'name', oldValue: null, newValue: account.name }
-    ];
-
-    newData = logAction(newData, 'create', 'account', `新增科目 ${account.name}`, changes, newId);
+    newData = logAction(newData, 'create', 'account', `新增科目 ${account.name}`, [], newId);
     setStorageData(newData);
   };
 
-  const addAsset = (asset: Omit<FixedAsset, 'id'>) => {
+  const addAsset = async (asset: Omit<FixedAsset, 'id'>) => {
+    if(USE_BACKEND) {
+        await apiClient.createAsset(asset);
+        setData(await apiClient.getBootstrapData());
+        return;
+    }
     let newData = { ...data };
     const newId = crypto.randomUUID();
     newData.fixedAssets.push({ ...asset, id: newId });
-    
-    const changes: AuditChange[] = [
-      { field: 'name', oldValue: null, newValue: asset.name },
-      { field: 'originalValue', oldValue: null, newValue: asset.originalValue }
-    ];
-
-    newData = logAction(newData, 'create', 'asset', `新增固定资产 ${asset.name}`, changes, newId);
+    newData = logAction(newData, 'create', 'asset', `新增固定资产 ${asset.name}`, [], newId);
     setStorageData(newData);
   };
 
-  const runDepreciation = () => {
-    let newData = { ...data };
-    
-    // Check if depreciation already ran this month
-    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-    const existing = newData.vouchers.find(v => v.voucherNumber.startsWith(`SYS-DEP-${currentMonth}`));
+  const runDepreciation = async () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const existing = data.vouchers.find(v => v.voucherNumber.startsWith(`SYS-DEP-${currentMonth}`));
     if (existing) {
         alert('本月折旧已计提，请勿重复操作！');
         return;
     }
 
-    const depreciationVoucherEntries: any[] = [];
-    let totalDep = 0;
+    if(USE_BACKEND) {
+        try {
+            const res = await apiClient.runDepreciation();
+            if(res.amount === 0) alert("无需计提折旧");
+            else alert("折旧执行成功");
+            setData(await apiClient.getBootstrapData());
+        } catch(e) {
+            alert("折旧执行失败: " + e.message);
+        }
+        return;
+    }
 
+    // Local Logic (Fallback)
+    let totalDep = 0;
+    let newData = { ...data };
     newData.fixedAssets = newData.fixedAssets.map(asset => {
-      // Straight line: (Cost - Salvage) / LifeYears / 12
       const monthlyDep = (asset.originalValue - asset.salvageValue) / (asset.lifeYears * 12);
       if (asset.accumulatedDepreciation + monthlyDep <= asset.originalValue - asset.salvageValue) {
         totalDep += monthlyDep;
@@ -208,152 +194,62 @@ export const useFinanceData = () => {
     });
 
     if (totalDep > 0) {
-      const depExpId = newData.accounts.find(a => a.name === '管理费用')?.id || '';
-      const accDepId = newData.accounts.find(a => a.name === '累计折旧')?.id || '';
-
-      if (depExpId && accDepId) {
-        const voucher: Voucher = {
-          id: crypto.randomUUID(),
-          voucherNumber: `SYS-DEP-${new Date().toISOString().slice(0,10)}`,
-          date: new Date().toISOString().slice(0, 10),
-          description: '系统自动计提本月折旧',
-          status: 'posted',
-          createdBy: 'SYSTEM',
-          entries: [
-            { accountId: depExpId, debit: totalDep, credit: 0 },
-            { accountId: accDepId, debit: 0, credit: totalDep }
-          ]
+        const id = crypto.randomUUID();
+        const voucherNumber = `SYS-DEP-${currentMonth}-001`;
+        const newVoucher: Voucher = { 
+            id, voucherNumber, date: new Date().toISOString().slice(0,10), 
+            description: `系统计提折旧: ${currentMonth}`, status: 'posted', createdBy: 'SYSTEM', entries: [],
+            attachments: []
         };
-        newData.vouchers.unshift(voucher);
-        newData = logAction(newData, 'create', 'voucher', `自动生成折旧凭证 ¥${totalDep.toFixed(2)}`);
-      }
+        newData.vouchers = [newVoucher, ...newData.vouchers];
+        logAction(newData, 'create', 'asset', `执行系统折旧 ${currentMonth}`, [{field: 'amount', oldValue: 0, newValue: totalDep}], id);
     }
     setStorageData(newData);
-    alert(`本月折旧计提完成，共计 ¥${totalDep.toFixed(2)}`);
   };
 
-  const setLockDate = (date: string) => {
-    let newData = { ...data };
-    const oldDate = newData.settings.lockDate;
-    newData.settings.lockDate = date;
-    
-    const changes: AuditChange[] = [
-      { field: 'lockDate', oldValue: oldDate, newValue: date }
-    ];
-
-    newData = logAction(newData, 'update', 'settings', `账期锁定至 ${date}`, changes);
-    setStorageData(newData);
-  };
-
-  // --- Manual Balance Item Functions ---
-
-  const addBalanceItem = (item: Omit<BalanceItem, 'id'>) => {
-    let newData = { ...data };
-    const newItem = { ...item, id: crypto.randomUUID() };
-    if (item.type === 'asset') newData.assets.push(newItem);
-    else newData.liabilities.push(newItem);
-    newData = logAction(newData, 'create', 'asset', `Added simple balance item: ${item.name}`, [], newItem.id);
-    setStorageData(newData);
-  };
-
-  const deleteBalanceItem = (id: string, type: 'asset' | 'liability') => {
+  const addBalanceItem = async (item: Omit<BalanceItem, 'id'>) => {
+      if(USE_BACKEND) {
+          await apiClient.addBalanceItem(item);
+          setData(await apiClient.getBootstrapData());
+          return;
+      }
       let newData = { ...data };
-      if (type === 'asset') newData.assets = newData.assets.filter(a => a.id !== id);
-      else newData.liabilities = newData.liabilities.filter(l => l.id !== id);
-      newData = logAction(newData, 'delete', 'asset', `Deleted simple balance item ${id}`, [], id);
+      const newItem = { ...item, id: crypto.randomUUID() };
+      if (item.type === 'asset') newData.assets.push(newItem);
+      else newData.liabilities.push(newItem);
       setStorageData(newData);
   };
 
-  // --- Settings Functions ---
+  const deleteBalanceItem = async (id: string, type: 'asset' | 'liability') => {
+      if(USE_BACKEND) {
+          await apiClient.deleteBalanceItem(id);
+          setData(await apiClient.getBootstrapData());
+          return;
+      }
+      let newData = { ...data };
+      if (type === 'asset') newData.assets = newData.assets.filter(a => a.id !== id);
+      else newData.liabilities = newData.liabilities.filter(l => l.id !== id);
+      setStorageData(newData);
+  };
 
-  const updateSettings = (settings: Partial<AppSettings>) => {
+  const updateSettings = async (settings: Partial<AppSettings>) => {
+    if(USE_BACKEND) {
+        await apiClient.updateSettings(settings);
+        setData(await apiClient.getBootstrapData());
+        return;
+    }
     let newData = { ...data };
-    const changes: AuditChange[] = [];
-
-    (Object.keys(settings) as Array<keyof AppSettings>).forEach(key => {
-       const oldValue = newData.settings[key];
-       const newValue = settings[key];
-       if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
-           changes.push({ field: key, oldValue, newValue });
-       }
-    });
-
     newData.settings = { ...newData.settings, ...settings };
-    newData = logAction(newData, 'update', 'settings', '更新系统设置', changes);
     setStorageData(newData);
   };
 
-  const toggleTheme = () => {
-    let newData = { ...data };
-    newData.settings.theme = newData.settings.theme === 'light' ? 'dark' : 'light';
-    setStorageData(newData);
-  };
-
-  const toggleLanguage = () => {
-    let newData = { ...data };
-    newData.settings.language = newData.settings.language === 'zh' ? 'en' : 'zh';
-    setStorageData(newData);
-  };
-
-  const addCategory = (type: 'income' | 'expense', category: string) => {
-    let newData = { ...data };
-    if (type === 'income') {
-        if(!newData.settings.incomeCategories.includes(category)) {
-            newData.settings.incomeCategories.push(category);
-        }
-    } else {
-        if(!newData.settings.expenseCategories.includes(category)) {
-            newData.settings.expenseCategories.push(category);
-        }
-    }
-    const changes = [{ field: type === 'income' ? 'incomeCategories' : 'expenseCategories', oldValue: 'List', newValue: `Added ${category}` }];
-    newData = logAction(newData, 'update', 'settings', `添加分类: ${category}`, changes);
-    setStorageData(newData);
-  };
-
-  const removeCategory = (type: 'income' | 'expense', category: string) => {
-    let newData = { ...data };
-     if (type === 'income') {
-        newData.settings.incomeCategories = newData.settings.incomeCategories.filter(c => c !== category);
-    } else {
-        newData.settings.expenseCategories = newData.settings.expenseCategories.filter(c => c !== category);
-    }
-    const changes = [{ field: type === 'income' ? 'incomeCategories' : 'expenseCategories', oldValue: 'List', newValue: `Removed ${category}` }];
-    newData = logAction(newData, 'update', 'settings', `删除分类: ${category}`, changes);
-    setStorageData(newData);
-  };
-
-  const importData = (jsonStr: string): boolean => {
-    try {
-        const imported = JSON.parse(jsonStr);
-        if (imported.accounts && imported.vouchers && imported.settings) {
-            setStorageData(imported);
-            return true;
-        }
-        return false;
-    } catch (e) {
-        return false;
-    }
-  };
-
-  const resetData = () => {
-    let newData = INITIAL_DATA;
-    newData = logAction(newData, 'delete', 'settings', '系统数据重置');
-    setStorageData(newData);
-    window.location.reload();
-  };
-
-  // --- Reporting Helpers ---
-
+  // --- Shared Helpers (Read-Only) ---
   const getTrialBalance = () => {
     const balances: Record<string, number> = {}; 
     data.accounts.forEach(a => balances[a.id] = 0);
-
     data.vouchers.forEach(v => {
       v.entries.forEach(e => {
-        if (balances[e.accountId] !== undefined) {
-          balances[e.accountId] += (e.debit - e.credit);
-        }
+        if (balances[e.accountId] !== undefined) balances[e.accountId] += (e.debit - e.credit);
       });
     });
     return balances;
@@ -361,10 +257,7 @@ export const useFinanceData = () => {
 
   const getRangeTrialBalance = (startDate: string, endDate: string) => {
     const result: Record<string, { debit: number, credit: number }> = {};
-    data.accounts.forEach(a => {
-      result[a.id] = { debit: 0, credit: 0 };
-    });
-
+    data.accounts.forEach(a => result[a.id] = { debit: 0, credit: 0 });
     data.vouchers.forEach(v => {
       if (v.date >= startDate && v.date <= endDate) {
         v.entries.forEach(e => {
@@ -378,15 +271,11 @@ export const useFinanceData = () => {
     return result;
   };
 
-  // --- Month-End Closing ---
-  
   const previewClosingEntry = (year: number, month: number) => {
     const startDate = `${year}-${String(month).padStart(2,'0')}-01`;
     const lastDay = new Date(year, month, 0).getDate();
     const endDate = `${year}-${String(month).padStart(2,'0')}-${lastDay}`;
-    
     const rangeBal = getRangeTrialBalance(startDate, endDate);
-    
     let totalRevenue = 0;
     let totalExpense = 0;
     const closingEntries: any[] = [];
@@ -410,26 +299,27 @@ export const useFinanceData = () => {
     });
 
     const netProfit = totalRevenue - totalExpense;
-    
     const retainedEarningsAcc = data.accounts.find(a => a.code === '4103' || a.name.includes('利润') || a.name.includes('Profit'));
     
     if (retainedEarningsAcc) {
-        if (netProfit > 0) {
-            closingEntries.push({ accountId: retainedEarningsAcc.id, debit: 0, credit: netProfit });
-        } else if (netProfit < 0) {
-            closingEntries.push({ accountId: retainedEarningsAcc.id, debit: Math.abs(netProfit), credit: 0 });
-        }
+        if (netProfit > 0) closingEntries.push({ accountId: retainedEarningsAcc.id, debit: 0, credit: netProfit });
+        else if (netProfit < 0) closingEntries.push({ accountId: retainedEarningsAcc.id, debit: Math.abs(netProfit), credit: 0 });
     }
 
     return { totalRevenue, totalExpense, netProfit, closingEntries, endDate };
   };
 
-  const executeClosing = (year: number, month: number) => {
+  const executeClosing = async (year: number, month: number) => {
     const preview = previewClosingEntry(year, month);
     if (preview.closingEntries.length === 0) return;
 
+    if (USE_BACKEND) {
+        await apiClient.executeClosing(year, month, preview.closingEntries);
+        setData(await apiClient.getBootstrapData());
+        return;
+    }
+
     let newData = { ...data };
-    
     const closingVoucher: Voucher = {
         id: crypto.randomUUID(),
         voucherNumber: `SYS-CLOSE-${year}${String(month).padStart(2,'0')}`,
@@ -440,18 +330,41 @@ export const useFinanceData = () => {
         createdBy: 'SYSTEM',
         attachments: []
     };
-    
     newData.vouchers.unshift(closingVoucher);
-    
-    const oldDate = newData.settings.lockDate;
     newData.settings.lockDate = preview.endDate;
-    
-    const changes: AuditChange[] = [
-      { field: 'lockDate', oldValue: oldDate, newValue: preview.endDate }
-    ];
-    
-    newData = logAction(newData, 'create', 'voucher', `执行月末结账 ${year}-${month}`, changes, closingVoucher.id);
+    logAction(newData, 'create', 'voucher', `执行月末结账 ${year}-${month}`, [], closingVoucher.id);
     setStorageData(newData);
+  };
+
+  // Wrappers
+  const toggleTheme = () => {
+      const newTheme = data.settings.theme === 'light' ? 'dark' : 'light';
+      updateSettings({ theme: newTheme });
+  };
+  const toggleLanguage = () => {
+      const newLang = data.settings.language === 'zh' ? 'en' : 'zh';
+      updateSettings({ language: newLang });
+  };
+  const addCategory = (type: 'income' | 'expense', category: string) => {
+      const list = type === 'income' ? [...data.settings.incomeCategories, category] : [...data.settings.expenseCategories, category];
+      updateSettings(type === 'income' ? { incomeCategories: list } : { expenseCategories: list });
+  };
+  const removeCategory = (type: 'income' | 'expense', category: string) => {
+      const list = type === 'income' ? data.settings.incomeCategories.filter(c=>c!==category) : data.settings.expenseCategories.filter(c=>c!==category);
+      updateSettings(type === 'income' ? { incomeCategories: list } : { expenseCategories: list });
+  };
+  const importData = (jsonStr: string) => { 
+      if(USE_BACKEND) { alert("Backend import not supported yet."); return false; }
+      try {
+        const imported = JSON.parse(jsonStr);
+        setStorageData(imported);
+        return true;
+      } catch(e) { return false; }
+  };
+  const resetData = () => {
+      if(USE_BACKEND) { alert("Please reset database manually."); return; }
+      setStorageData(INITIAL_DATA);
+      window.location.reload();
   };
 
   return {
@@ -461,11 +374,6 @@ export const useFinanceData = () => {
     addAccount,
     addAsset,
     runDepreciation,
-    setLockDate,
-    resetSystem: resetData,
-    resetData,
-    getTrialBalance,
-    getRangeTrialBalance,
     addBalanceItem,
     deleteBalanceItem,
     updateSettings,
@@ -476,6 +384,9 @@ export const useFinanceData = () => {
     removeCategory,
     importData,
     previewClosingEntry,
-    executeClosing
+    executeClosing,
+    resetData,
+    getTrialBalance,
+    getRangeTrialBalance
   };
 };
