@@ -1,6 +1,8 @@
+
 import React, { useState } from 'react';
 import { useFinanceData } from '../services/storage';
 import { Plus, Trash2, TrendingUp, TrendingDown, Landmark, Scale, AlertCircle } from 'lucide-react';
+import { AccountType } from '../types';
 
 const Accounting = () => {
   const { data, addBalanceItem, deleteBalanceItem } = useFinanceData();
@@ -24,8 +26,17 @@ const Accounting = () => {
   const netWorth = totalAssets - totalLiabilities;
 
   // 2. 计算损益表累计数据 (Retained Earnings)
-  const totalIncome = data.transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const totalExpense = data.transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+  let totalIncome = 0;
+  let totalExpense = 0;
+
+  data.vouchers.forEach(v => {
+      v.entries.forEach(e => {
+          const acc = data.accounts.find(a => a.id === e.accountId);
+          if (acc?.type === AccountType.REVENUE) totalIncome += (e.credit - e.debit);
+          if (acc?.type === AccountType.EXPENSE) totalExpense += (e.debit - e.credit);
+      });
+  });
+
   const retainedEarnings = totalIncome - totalExpense;
 
   // 3. 计算调节项 (初始资金/Owner's Equity)

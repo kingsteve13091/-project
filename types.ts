@@ -81,23 +81,12 @@ export interface AppSettings {
   currency: string;
   lockDate: string; // 月末结账锁定日期
   theme: 'light' | 'dark';
+  language: 'zh' | 'en'; // Added language support
   incomeCategories: string[];
   expenseCategories: string[];
 }
 
-// Types for Simple Bookkeeping Mode (Transaction-based)
-export type TransactionType = 'income' | 'expense';
-
-export interface Transaction {
-  id: string;
-  amount: number;
-  type: TransactionType;
-  category: string;
-  date: string;
-  description: string;
-  accountType?: 'company' | 'personal';
-}
-
+// Simple Balance Item for dashboard quick stats if needed, though we rely on Accounts mostly
 export interface BalanceItem {
   id: string;
   name: string;
@@ -127,10 +116,8 @@ export interface FinanceData {
   fixedAssets: FixedAsset[];
   auditLogs: AuditLog[];
   settings: AppSettings;
-  // Simple Mode Data
-  transactions: Transaction[];
-  assets: BalanceItem[];     // Simple assets list
-  liabilities: BalanceItem[]; // Simple liabilities list
+  assets: BalanceItem[];     // Simple assets list (Manual entry)
+  liabilities: BalanceItem[]; // Simple liabilities list (Manual entry)
 }
 
 export interface User {
@@ -139,4 +126,17 @@ export interface User {
   email: string;
   role: UserRole;
   avatar: string;
+}
+
+// Legacy / Simple Mode Types
+export type TransactionType = 'income' | 'expense';
+
+export interface Transaction {
+  id: string;
+  amount: number;
+  type: TransactionType;
+  category: string;
+  date: string;
+  description: string;
+  accountType?: 'company' | 'personal';
 }

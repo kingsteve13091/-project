@@ -4,6 +4,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Record from './pages/Record';
+import Records from './pages/Records';
 import Vouchers from './pages/Vouchers';
 import Statements from './pages/Statements';
 import TrialBalance from './pages/TrialBalance';
@@ -16,8 +17,10 @@ import Settings from './pages/Settings';
 import Login from './pages/Login';
 import { User } from './types';
 import { CURRENT_USER } from './services/mockData';
+import { useFinanceData } from './services/storage';
 
 const App = () => {
+  useFinanceData(); // Initialize Theme and Data Listeners
   const [user, setUser] = useState<User | null>(null);
 
   const handleLogin = () => {
@@ -43,6 +46,7 @@ const App = () => {
           
           {/* Automated Outputs (Accountant View) */}
           <Route path="vouchers" element={<Vouchers />} />
+          <Route path="records" element={<Records />} />
           <Route path="statements" element={<Statements />} />
           <Route path="trial-balance" element={<TrialBalance />} />
           <Route path="closing" element={<Closing />} />

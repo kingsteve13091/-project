@@ -1,22 +1,29 @@
 
-import { Account, AccountType, Voucher, FixedAsset, Transaction, UserRole } from '../types';
+import { Account, AccountType, Voucher, FixedAsset, UserRole, Transaction } from '../types';
 
 export const DEFAULT_ACCOUNTS: Account[] = [
   // 资产类 (Assets)
   { id: '1001', code: '1001', name: '库存现金', type: AccountType.ASSET },
   { id: '1002', code: '1002', name: '银行存款', type: AccountType.ASSET },
   { id: '1122', code: '1122', name: '应收账款', type: AccountType.ASSET },
+  { id: '1123', code: '1123', name: '预付账款', type: AccountType.ASSET },
   { id: '1221', code: '1221', name: '其他应收款', type: AccountType.ASSET },
+  { id: '1403', code: '1403', name: '原材料', type: AccountType.ASSET },
   { id: '1405', code: '1405', name: '库存商品', type: AccountType.ASSET },
   { id: '1601', code: '1601', name: '固定资产', type: AccountType.ASSET },
   { id: '1602', code: '1602', name: '累计折旧', type: AccountType.ASSET },
+  { id: '1701', code: '1701', name: '无形资产', type: AccountType.ASSET },
+  { id: '1801', code: '1801', name: '长期待摊费用', type: AccountType.ASSET },
   { id: '1901', code: '1901', name: '待处理财产损溢', type: AccountType.ASSET },
 
   // 负债类 (Liabilities)
   { id: '2001', code: '2001', name: '短期借款', type: AccountType.LIABILITY },
+  { id: '2201', code: '2201', name: '应付票据', type: AccountType.LIABILITY },
   { id: '2202', code: '2202', name: '应付账款', type: AccountType.LIABILITY },
+  { id: '2203', code: '2203', name: '预收账款', type: AccountType.LIABILITY },
   { id: '2211', code: '2211', name: '应付职工薪酬', type: AccountType.LIABILITY },
   { id: '2221', code: '2221', name: '应交税费', type: AccountType.LIABILITY },
+  { id: '2231', code: '2231', name: '应付利息', type: AccountType.LIABILITY },
   { id: '2241', code: '2241', name: '其他应付款', type: AccountType.LIABILITY },
 
   // 所有者权益 (Equity)
@@ -46,7 +53,7 @@ export const SEED_VOUCHERS: Voucher[] = [];
 export const SEED_ASSETS: FixedAsset[] = [
   {
     id: 'fa-1',
-    name: '苹果笔记本电脑 MacBook Pro',
+    name: 'MacBook Pro 笔记本',
     purchaseDate: '2023-01-15',
     originalValue: 15000,
     salvageValue: 750, // 5% 残值
@@ -57,24 +64,15 @@ export const SEED_ASSETS: FixedAsset[] = [
 ];
 
 export const SEED_TRANSACTIONS: Transaction[] = [
-    {
-        id: '1',
-        amount: 5000,
-        type: 'income',
-        category: '咨询服务',
-        date: '2023-10-01',
-        description: '项目首付款',
-        accountType: 'company'
-    },
-    {
-        id: '2',
-        amount: 200,
-        type: 'expense',
-        category: '水电费',
-        date: '2023-10-05',
-        description: '办公室宽带费',
-        accountType: 'company'
-    }
+  {
+    id: 'tx1',
+    amount: 5000,
+    type: 'income',
+    category: 'Tuition Fees',
+    date: '2023-10-01',
+    description: 'Student fees',
+    accountType: 'company'
+  }
 ];
 
 export const CURRENT_USER = {

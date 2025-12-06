@@ -1,5 +1,5 @@
 {
-  "name": "EduFinance Pro",
-  "description": "A comprehensive financial management system for education centers, featuring bookkeeping, accounting analysis, AI advisory, and audit alerts.",
+  "name": "财务管理员",
+  "description": "专为教育中心设计的综合财务管理系统，集成记账、会计分析、AI 顾问及审计预警功能。",
   "requestFramePermissions": []
 }

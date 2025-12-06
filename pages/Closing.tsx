@@ -4,7 +4,7 @@ import { useFinanceData } from '../services/storage';
 import { Lock, ArrowRight, CheckCircle, AlertCircle, Calendar } from 'lucide-react';
 
 const Closing = () => {
-  const { data, previewClosingEntry, executeClosing } = useFinanceData();
+  const { data, previewClosingEntry, executeClosing, t } = useFinanceData();
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
@@ -18,11 +18,11 @@ const Closing = () => {
   };
 
   const handleExecute = () => {
-    if(!window.confirm('This will generate a closing voucher and LOCK the period. Continue?')) return;
+    if(!window.confirm(t('closing.confirm_dialog'))) return;
     const [y, m] = selectedMonth.split('-');
     executeClosing(parseInt(y), parseInt(m));
     setPreviewData(null);
-    alert('Month closed successfully.');
+    alert(t('closing.success_msg'));
   };
 
   const getAccountName = (id: string) => data.accounts.find(a => a.id === id)?.name || id;
@@ -30,40 +30,40 @@ const Closing = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Month-End Closing</h1>
-        <p className="text-slate-500">Lock the period and transfer Profit & Loss to Retained Earnings.</p>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{t('closing.title')}</h1>
+        <p className="text-slate-500 dark:text-slate-400">{t('closing.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Status Card */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
            <div className="flex items-center gap-3 mb-4">
-             <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
+             <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg text-indigo-600 dark:text-indigo-400">
                <Lock size={20} />
              </div>
-             <h3 className="font-bold text-slate-900">Current Status</h3>
+             <h3 className="font-bold text-slate-900 dark:text-white">{t('closing.status_title')}</h3>
            </div>
            <div className="space-y-4">
              <div>
-               <p className="text-xs text-slate-400 uppercase font-bold tracking-wider">Locked Until</p>
-               <p className="text-xl font-mono font-medium text-slate-800">
-                 {data.settings.lockDate || 'No Lock Date Set'}
+               <p className="text-xs text-slate-400 dark:text-slate-500 uppercase font-bold tracking-wider">{t('closing.lock_date')}</p>
+               <p className="text-xl font-mono font-medium text-slate-800 dark:text-slate-200">
+                 {data.settings.lockDate || t('closing.not_set')}
                </p>
              </div>
-             <div className="text-sm text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100">
+             <div className="text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
                <AlertCircle size={14} className="inline mr-1 text-indigo-500" />
-               Vouchers cannot be added or modified before this date.
+               {t('closing.lock_warning')}
              </div>
            </div>
         </div>
 
         {/* Action Card */}
-        <div className="md:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-           <h3 className="font-bold text-slate-900 mb-6">Perform Closing</h3>
+        <div className="md:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+           <h3 className="font-bold text-slate-900 dark:text-white mb-6">{t('closing.execute_title')}</h3>
            
            <div className="flex items-end gap-4 mb-8">
              <div className="flex-1">
-               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Select Period</label>
+               <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">{t('closing.select_month')}</label>
                <input 
                  type="month" 
                  value={selectedMonth}
@@ -71,48 +71,48 @@ const Closing = () => {
                     setSelectedMonth(e.target.value);
                     setPreviewData(null);
                  }}
-                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none text-slate-700 font-medium"
+                 className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 outline-none text-slate-700 dark:text-slate-200 font-medium"
                />
              </div>
              <button 
                onClick={handlePreview}
-               className="px-6 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-colors shadow-sm"
+               className="px-6 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors shadow-sm"
              >
-               Preview Closing
+               {t('closing.preview_btn')}
              </button>
            </div>
 
            {previewData && (
              <div className="animate-in fade-in slide-in-from-top-4 duration-300">
-               <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden mb-6">
-                 <div className="px-6 py-3 bg-slate-100/50 border-b border-slate-200 flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-500 uppercase">Preview: Closing Voucher</span>
+               <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden mb-6">
+                 <div className="px-6 py-3 bg-slate-100/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">{t('closing.preview_title')}</span>
                     <span className="text-xs font-mono text-slate-400">{previewData.endDate}</span>
                  </div>
                  <div className="p-6 grid grid-cols-3 gap-8">
                     <div className="text-center">
-                      <p className="text-xs text-slate-400 font-bold uppercase">Total Revenue</p>
-                      <p className="text-lg font-mono font-bold text-emerald-600">¥{previewData.totalRevenue.toLocaleString()}</p>
+                      <p className="text-xs text-slate-400 font-bold uppercase">{t('closing.total_revenue')}</p>
+                      <p className="text-lg font-mono font-bold text-emerald-600 dark:text-emerald-400">¥{previewData.totalRevenue.toLocaleString()}</p>
                     </div>
-                    <div className="text-center border-x border-slate-200">
-                      <p className="text-xs text-slate-400 font-bold uppercase">Total Expense</p>
-                      <p className="text-lg font-mono font-bold text-rose-600">¥{previewData.totalExpense.toLocaleString()}</p>
+                    <div className="text-center border-x border-slate-200 dark:border-slate-700">
+                      <p className="text-xs text-slate-400 font-bold uppercase">{t('closing.total_expense')}</p>
+                      <p className="text-lg font-mono font-bold text-rose-600 dark:text-rose-400">¥{previewData.totalExpense.toLocaleString()}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-xs text-slate-400 font-bold uppercase">Net P&L Transfer</p>
-                      <p className={`text-lg font-mono font-bold ${previewData.netProfit >= 0 ? 'text-indigo-600' : 'text-amber-600'}`}>
+                      <p className="text-xs text-slate-400 font-bold uppercase">{t('closing.net_transfer')}</p>
+                      <p className={`text-lg font-mono font-bold ${previewData.netProfit >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-amber-600 dark:text-amber-400'}`}>
                         ¥{previewData.netProfit.toLocaleString()}
                       </p>
                     </div>
                  </div>
-                 <div className="bg-white p-4 border-t border-slate-200">
-                    <p className="text-xs font-bold text-slate-400 mb-2">JOURNAL ENTRIES</p>
+                 <div className="bg-white dark:bg-slate-800 p-4 border-t border-slate-200 dark:border-slate-700">
+                    <p className="text-xs font-bold text-slate-400 mb-2">{t('closing.entry_details')}</p>
                     <div className="space-y-1">
                       {previewData.closingEntries.map((e: any, idx: number) => (
-                        <div key={idx} className="flex justify-between text-xs text-slate-600 font-mono">
+                        <div key={idx} className="flex justify-between text-xs text-slate-600 dark:text-slate-300 font-mono">
                           <span>{getAccountName(e.accountId)}</span>
                           <span className="text-slate-400">
-                            {e.debit > 0 ? `Dr: ${e.debit.toLocaleString()}` : `Cr: ${e.credit.toLocaleString()}`}
+                            {e.debit > 0 ? `借: ${e.debit.toLocaleString()}` : `贷: ${e.credit.toLocaleString()}`}
                           </span>
                         </div>
                       ))}
@@ -123,9 +123,9 @@ const Closing = () => {
                <div className="flex justify-end">
                   <button 
                     onClick={handleExecute}
-                    className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all"
+                    className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all"
                   >
-                    <CheckCircle size={18} /> Execute & Lock Period
+                    <CheckCircle size={18} /> {t('closing.confirm_btn')}
                   </button>
                </div>
              </div>

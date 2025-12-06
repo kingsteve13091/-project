@@ -1,9 +1,10 @@
 
 import { useState, useEffect } from 'react';
 import { FinanceData, Voucher, Account, AuditLog, AppSettings, FixedAsset, AccountType, BalanceItem, AuditChange } from '../types';
-import { DEFAULT_ACCOUNTS, SEED_VOUCHERS, SEED_ASSETS, CURRENT_USER, SEED_TRANSACTIONS } from './mockData';
+import { DEFAULT_ACCOUNTS, SEED_VOUCHERS, SEED_ASSETS, CURRENT_USER } from './mockData';
+import { translations } from './translations';
 
-const STORAGE_KEY = 'finance_manager_enterprise_v2'; // Upgraded version to reset defaults
+const STORAGE_KEY = 'finance_manager_enterprise_v3'; // Upgraded version for clean slate
 
 const INITIAL_DATA: FinanceData = {
   accounts: DEFAULT_ACCOUNTS,
@@ -15,10 +16,10 @@ const INITIAL_DATA: FinanceData = {
     currency: '¥',
     lockDate: '',
     theme: 'light',
+    language: 'zh', // Default language
     incomeCategories: ['学费收入', '咨询服务', '政府补助', '利息收入'],
     expenseCategories: ['房租物业', '水电费', '工资薪金', '市场推广', '办公用品', '差旅费']
   },
-  transactions: SEED_TRANSACTIONS,
   assets: [{id: '1', name: '库存现金', amount: 50000, type: 'asset'}],
   liabilities: [{id: '2', name: '信用卡欠款', amount: 2000, type: 'liability'}]
 };
@@ -28,7 +29,7 @@ export const getStorageData = (): FinanceData => {
     const item = localStorage.getItem(STORAGE_KEY);
     if (!item) return INITIAL_DATA;
     
-    // Merge with INITIAL_DATA to ensure new fields (like categories) exist in old stored data
+    // Merge with INITIAL_DATA to ensure new fields
     const parsed = JSON.parse(item);
     return {
         ...INITIAL_DATA,
@@ -51,14 +52,33 @@ export const useFinanceData = () => {
   useEffect(() => {
     const handleStorageChange = () => setData(getStorageData());
     window.addEventListener('finance-data-update', handleStorageChange);
-    
-    if (data.settings.theme === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-
     return () => window.removeEventListener('finance-data-update', handleStorageChange);
   }, []);
 
-  // --- Audit Logger Helper ---
+  useEffect(() => {
+    if (data.settings.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [data.settings.theme]);
+
+  // Translation Helper
+  const t = (key: string): string => {
+    const lang = data.settings.language || 'zh';
+    const keys = key.split('.');
+    let value: any = translations[lang];
+    
+    for (const k of keys) {
+      if (value && value[k]) {
+        value = value[k];
+      } else {
+        return key; // Return key if translation missing
+      }
+    }
+    return value;
+  };
+
   const logAction = (
     currentData: FinanceData, 
     action: AuditLog['action'], 
@@ -89,7 +109,7 @@ export const useFinanceData = () => {
     
     // Check Lock Date
     if (newData.settings.lockDate && voucher.date <= newData.settings.lockDate) {
-      alert(`无法在锁定日期 (${newData.settings.lockDate}) 之前添加凭证。请联系管理员解锁。`);
+      alert(`无法在锁定日期 (${newData.settings.lockDate}) 之前添加凭证。`);
       return;
     }
 
@@ -114,7 +134,7 @@ export const useFinanceData = () => {
       { field: 'amount', oldValue: null, newValue: totalDebit }
     ];
 
-    newData = logAction(newData, 'create', 'voucher', `Created voucher ${voucherNumber}: ${voucher.description}`, changes, newId);
+    newData = logAction(newData, 'create', 'voucher', `创建凭证 ${voucherNumber}: ${voucher.description}`, changes, newId);
     setStorageData(newData);
   };
 
@@ -130,7 +150,7 @@ export const useFinanceData = () => {
         { field: 'status', oldValue: oldStatus, newValue: status }
       ];
       
-      newData = logAction(newData, 'approve', 'voucher', `Updated voucher ${voucher.voucherNumber} status to ${status}`, changes, id);
+      newData = logAction(newData, 'approve', 'voucher', `更新凭证 ${voucher.voucherNumber} 状态为 ${status}`, changes, id);
       setStorageData(newData);
     }
   };
@@ -142,11 +162,10 @@ export const useFinanceData = () => {
     
     const changes: AuditChange[] = [
        { field: 'code', oldValue: null, newValue: account.code },
-       { field: 'name', oldValue: null, newValue: account.name },
-       { field: 'type', oldValue: null, newValue: account.type }
+       { field: 'name', oldValue: null, newValue: account.name }
     ];
 
-    newData = logAction(newData, 'create', 'account', `Added account ${account.name} (${account.code})`, changes, newId);
+    newData = logAction(newData, 'create', 'account', `新增科目 ${account.name}`, changes, newId);
     setStorageData(newData);
   };
 
@@ -160,13 +179,21 @@ export const useFinanceData = () => {
       { field: 'originalValue', oldValue: null, newValue: asset.originalValue }
     ];
 
-    newData = logAction(newData, 'create', 'asset', `Added asset ${asset.name}`, changes, newId);
+    newData = logAction(newData, 'create', 'asset', `新增固定资产 ${asset.name}`, changes, newId);
     setStorageData(newData);
   };
 
   const runDepreciation = () => {
-    // Simplified Monthly Depreciation
     let newData = { ...data };
+    
+    // Check if depreciation already ran this month
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const existing = newData.vouchers.find(v => v.voucherNumber.startsWith(`SYS-DEP-${currentMonth}`));
+    if (existing) {
+        alert('本月折旧已计提，请勿重复操作！');
+        return;
+    }
+
     const depreciationVoucherEntries: any[] = [];
     let totalDep = 0;
 
@@ -198,10 +225,11 @@ export const useFinanceData = () => {
           ]
         };
         newData.vouchers.unshift(voucher);
-        newData = logAction(newData, 'create', 'voucher', `Auto-generated depreciation voucher for ¥${totalDep.toFixed(2)}`);
+        newData = logAction(newData, 'create', 'voucher', `自动生成折旧凭证 ¥${totalDep.toFixed(2)}`);
       }
     }
     setStorageData(newData);
+    alert(`本月折旧计提完成，共计 ¥${totalDep.toFixed(2)}`);
   };
 
   const setLockDate = (date: string) => {
@@ -213,18 +241,11 @@ export const useFinanceData = () => {
       { field: 'lockDate', oldValue: oldDate, newValue: date }
     ];
 
-    newData = logAction(newData, 'update', 'settings', `Closed books up to ${date}`, changes);
+    newData = logAction(newData, 'update', 'settings', `账期锁定至 ${date}`, changes);
     setStorageData(newData);
   };
 
-  // --- Simple Mode Functions (Transaction/BalanceItem) ---
-  
-  const deleteTransaction = (id: string) => {
-    let newData = { ...data };
-    newData.transactions = newData.transactions.filter(t => t.id !== id);
-    newData = logAction(newData, 'delete', 'transaction', `Deleted transaction ${id}`, [], id);
-    setStorageData(newData);
-  };
+  // --- Manual Balance Item Functions ---
 
   const addBalanceItem = (item: Omit<BalanceItem, 'id'>) => {
     let newData = { ...data };
@@ -249,7 +270,6 @@ export const useFinanceData = () => {
     let newData = { ...data };
     const changes: AuditChange[] = [];
 
-    // Detect changes
     (Object.keys(settings) as Array<keyof AppSettings>).forEach(key => {
        const oldValue = newData.settings[key];
        const newValue = settings[key];
@@ -259,15 +279,19 @@ export const useFinanceData = () => {
     });
 
     newData.settings = { ...newData.settings, ...settings };
-    newData = logAction(newData, 'update', 'settings', 'Updated application settings', changes);
+    newData = logAction(newData, 'update', 'settings', '更新系统设置', changes);
     setStorageData(newData);
   };
 
   const toggleTheme = () => {
     let newData = { ...data };
-    const oldTheme = newData.settings.theme;
     newData.settings.theme = newData.settings.theme === 'light' ? 'dark' : 'light';
-    
+    setStorageData(newData);
+  };
+
+  const toggleLanguage = () => {
+    let newData = { ...data };
+    newData.settings.language = newData.settings.language === 'zh' ? 'en' : 'zh';
     setStorageData(newData);
   };
 
@@ -283,7 +307,7 @@ export const useFinanceData = () => {
         }
     }
     const changes = [{ field: type === 'income' ? 'incomeCategories' : 'expenseCategories', oldValue: 'List', newValue: `Added ${category}` }];
-    newData = logAction(newData, 'update', 'settings', `Added category: ${category}`, changes);
+    newData = logAction(newData, 'update', 'settings', `添加分类: ${category}`, changes);
     setStorageData(newData);
   };
 
@@ -295,14 +319,13 @@ export const useFinanceData = () => {
         newData.settings.expenseCategories = newData.settings.expenseCategories.filter(c => c !== category);
     }
     const changes = [{ field: type === 'income' ? 'incomeCategories' : 'expenseCategories', oldValue: 'List', newValue: `Removed ${category}` }];
-    newData = logAction(newData, 'update', 'settings', `Removed category: ${category}`, changes);
+    newData = logAction(newData, 'update', 'settings', `删除分类: ${category}`, changes);
     setStorageData(newData);
   };
 
   const importData = (jsonStr: string): boolean => {
     try {
         const imported = JSON.parse(jsonStr);
-        // Simple validation check
         if (imported.accounts && imported.vouchers && imported.settings) {
             setStorageData(imported);
             return true;
@@ -315,7 +338,7 @@ export const useFinanceData = () => {
 
   const resetData = () => {
     let newData = INITIAL_DATA;
-    newData = logAction(newData, 'delete', 'settings', 'SYSTEM RESET perform by user');
+    newData = logAction(newData, 'delete', 'settings', '系统数据重置');
     setStorageData(newData);
     window.location.reload();
   };
@@ -323,7 +346,7 @@ export const useFinanceData = () => {
   // --- Reporting Helpers ---
 
   const getTrialBalance = () => {
-    const balances: Record<string, number> = {}; // accountId -> balance (Dr - Cr)
+    const balances: Record<string, number> = {}; 
     data.accounts.forEach(a => balances[a.id] = 0);
 
     data.vouchers.forEach(v => {
@@ -336,19 +359,13 @@ export const useFinanceData = () => {
     return balances;
   };
 
-  /**
-   * Calculates specific Debit and Credit totals for a given date range.
-   */
   const getRangeTrialBalance = (startDate: string, endDate: string) => {
     const result: Record<string, { debit: number, credit: number }> = {};
-    
-    // Initialize
     data.accounts.forEach(a => {
       result[a.id] = { debit: 0, credit: 0 };
     });
 
     data.vouchers.forEach(v => {
-      // Filter by date range (inclusive)
       if (v.date >= startDate && v.date <= endDate) {
         v.entries.forEach(e => {
           if (result[e.accountId]) {
@@ -358,7 +375,6 @@ export const useFinanceData = () => {
         });
       }
     });
-
     return result;
   };
 
@@ -366,7 +382,6 @@ export const useFinanceData = () => {
   
   const previewClosingEntry = (year: number, month: number) => {
     const startDate = `${year}-${String(month).padStart(2,'0')}-01`;
-    // get last day of month
     const lastDay = new Date(year, month, 0).getDate();
     const endDate = `${year}-${String(month).padStart(2,'0')}-${lastDay}`;
     
@@ -376,40 +391,32 @@ export const useFinanceData = () => {
     let totalExpense = 0;
     const closingEntries: any[] = [];
 
-    // 1. Close Revenue Accounts (Credit balance -> Debit to zero)
     data.accounts.filter(a => a.type === AccountType.REVENUE).forEach(acc => {
        const bal = rangeBal[acc.id];
        const netCredit = bal.credit - bal.debit;
        if (netCredit !== 0) {
            totalRevenue += netCredit;
-           // To close a credit balance, we Debit the account
            closingEntries.push({ accountId: acc.id, debit: netCredit, credit: 0 });
        }
     });
 
-    // 2. Close Expense Accounts (Debit balance -> Credit to zero)
     data.accounts.filter(a => a.type === AccountType.EXPENSE).forEach(acc => {
         const bal = rangeBal[acc.id];
         const netDebit = bal.debit - bal.credit;
         if (netDebit !== 0) {
             totalExpense += netDebit;
-            // To close a debit balance, we Credit the account
             closingEntries.push({ accountId: acc.id, debit: 0, credit: netDebit });
         }
     });
 
     const netProfit = totalRevenue - totalExpense;
     
-    // 3. Plug difference to Retained Earnings
-    // Find '本年利润' (Current Year Profit) or 'Retained Earnings'
     const retainedEarningsAcc = data.accounts.find(a => a.code === '4103' || a.name.includes('利润') || a.name.includes('Profit'));
     
     if (retainedEarningsAcc) {
         if (netProfit > 0) {
-            // Profit = Credit Equity
             closingEntries.push({ accountId: retainedEarningsAcc.id, debit: 0, credit: netProfit });
         } else if (netProfit < 0) {
-            // Loss = Debit Equity
             closingEntries.push({ accountId: retainedEarningsAcc.id, debit: Math.abs(netProfit), credit: 0 });
         }
     }
@@ -423,12 +430,11 @@ export const useFinanceData = () => {
 
     let newData = { ...data };
     
-    // Create Closing Voucher
     const closingVoucher: Voucher = {
         id: crypto.randomUUID(),
         voucherNumber: `SYS-CLOSE-${year}${String(month).padStart(2,'0')}`,
         date: preview.endDate,
-        description: `Month-End Closing: ${year}-${String(month).padStart(2,'0')}`,
+        description: `月末结转: ${year}年${month}月`,
         entries: preview.closingEntries,
         status: 'posted',
         createdBy: 'SYSTEM',
@@ -437,7 +443,6 @@ export const useFinanceData = () => {
     
     newData.vouchers.unshift(closingVoucher);
     
-    // Update Lock Date
     const oldDate = newData.settings.lockDate;
     newData.settings.lockDate = preview.endDate;
     
@@ -445,7 +450,7 @@ export const useFinanceData = () => {
       { field: 'lockDate', oldValue: oldDate, newValue: preview.endDate }
     ];
     
-    newData = logAction(newData, 'create', 'voucher', `Executed Month-End Closing for ${year}-${month}`, changes, closingVoucher.id);
+    newData = logAction(newData, 'create', 'voucher', `执行月末结账 ${year}-${month}`, changes, closingVoucher.id);
     setStorageData(newData);
   };
 
@@ -457,15 +462,16 @@ export const useFinanceData = () => {
     addAsset,
     runDepreciation,
     setLockDate,
-    resetSystem: resetData, // alias
+    resetSystem: resetData,
     resetData,
     getTrialBalance,
     getRangeTrialBalance,
-    deleteTransaction,
     addBalanceItem,
     deleteBalanceItem,
     updateSettings,
     toggleTheme,
+    toggleLanguage,
+    t,
     addCategory,
     removeCategory,
     importData,
